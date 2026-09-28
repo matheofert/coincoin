@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paradis des canards</title>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #aide {
+      position: fixed; left: 12px; bottom: 12px; z-index: 10;
+      font: 14px/1.4 system-ui, sans-serif; color: #fff;
+      background: rgba(20, 60, 90, .55); padding: 8px 12px; border-radius: 10px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div id="aide">ZQSD / flèches : se déplacer · souris : regarder</div>
+
+<a-scene fog="type: exponential; color: #bfe9ff; density: 0.012" renderer="colorManagement: true">
+
+  <a-assets timeout="30000">
+    <a-asset-item id="duck-obj"   src="../models/duck.obj"></a-asset-item>
+    <a-asset-item id="rubber-obj" src="../models/RubberDuck_LOD1.obj"></a-asset-item>
+    <img id="duck-tex"   src="../textures/Duck_Base_color.png">
+    <img id="rubber-tex" src="../textures/RubberDuck_BaseColor.png">
+  </a-assets>
+
+  <!-- Ciel, lumière -->
+  <a-sky color="#8fd6ff"></a-sky>
+  <a-entity light="type: ambient; color: #fff4dd; intensity: 0.8"></a-entity>
+  <a-entity light="type: directional; color: #fff1c9; intensity: 0.9" position="-20 30 10"></a-entity>
+  <a-sphere position="-60 55 -80" radius="6" material="color: #fff6b0; shader: flat"></a-sphere>
+
+  <!-- Île, sable, étang -->
+  <a-circle rotation="-90 0 0" radius="45" color="#7ed957"></a-circle>
+  <a-circle rotation="-90 0 0" position="0 0.01 0" radius="11.5" color="#f3e2a9"></a-circle>
+  <a-cylinder position="0 0.03 0" radius="10" height="0.1"
+              material="color: #35b8f0; opacity: 0.85; metalness: 0.3; roughness: 0.2"></a-cylinder>
+
+  <!-- Décor généré par le script -->
+  <a-entity id="decor"></a-entity>
+  <a-entity id="canards"></a-entity>
+
+  <!-- Caméra -->
+  <a-entity position="0 1.6 14" wasd-controls="acceleration: 30">
+    <a-camera look-controls></a-camera>
+  </a-entity>
+</a-scene>
+
+<script>
+  // ---------- Réglages ----------
+  const YAW_OFFSET = 0;      // change en 90 / 180 / -90 si les canards nagent de travers
+  const NB_NAGEURS = 10;     // canards sur l'étang
+  const NB_TERRE   = 24;     // canards sur l'herbe
+  const MODELES = [
+    { obj: '#duck-obj',   tex: '#duck-tex' },
+    { obj: '#rubber-obj', tex: '#rubber-tex' }
+  ];
+
+  // Redimensionne automatiquement un modèle OBJ à une taille cible (en mètres)
+  // et pose sa base sur y = 0, quelle que soit l'échelle d'origine du fichier.
+  AFRAME.registerComponent('fit', {
+    schema: { size: { default: 1 } },
+    init() {
+      this.el.addEventListener('model-loaded', () => {
+        const obj = this.el.getObject3D('mesh');
+        const box = new THREE.Box3();
+        obj.traverse(m => {
+          if (m.isMesh) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); }
+        });
+        const s = box.getSize(new THREE.Vector3());
+        const k = this.data.size / Math.max(s.x, s.y, s.z);
+        const c = box.getCenter(new THREE.Vector3());
+        obj.scale.setScalar(k);
+        obj.position.set(-c.x * k, -box.min.y * k, -c.z * k);
+      });
+    }
+  });
+
+  const R = (a, b) => a + Math.random() * (b - a);
+  const pick = () => MODELES[Math.floor(Math.random() * MODELES.length)];
+
+  function el(tag, attrs, parent) {
+    const e = document.createElement(tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  }
+
+  function canard(parent, m, size) {
+    return el('a-entity', {
+      'obj-model': `obj: ${m.obj}`,
+      material: `src: ${m.tex}; roughness: 0.6`,
+      fit: `size: ${size}`
+    }, parent);
+  }
+
+  document.querySelector('a-scene').addEventListener('loaded', () => {
+    const decor = document.getElementById('decor');
+    const canards = document.getElementById('canards');
+
+    // Grand canard en caoutchouc au centre de l'étang
+    const geant = el('a-entity', { position: '0 0.1 0' }, canards);
+    geant.setAttribute('animation', 'property: position; to: 0 0.5 0; dir: alternate; dur: 2200; loop: true; easing: easeInOutSine');
+    canard(geant, MODELES[1], 4);
+
+    // Canards qui nagent en cercle
+    for (let i = 0; i < NB_NAGEURS; i++) {
+      const sens = i % 2 ? 1 : -1;
+      const r = R(4.5, 8.5);
+      const depart = R(0, 360);
+      const pivot = el('a-entity', {
+        position: '0 0.1 0',
+        rotation: `0 ${depart} 0`,
+        animation: `property: rotation; from: 0 ${depart} 0; to: 0 ${depart + sens * 360} 0; dur: ${R(30000, 60000)}; loop: true; easing: linear`
+      }, canards);
+
+      const porteur = el('a-entity', {
+        position: `${r} 0 0`,
+        rotation: `0 ${(sens > 0 ? 180 : 0) + YAW_OFFSET} 0`
+      }, pivot);
+      const flotte = el('a-entity', {
+        animation: `property: position; to: 0 0.1 0; dir: alternate; dur: ${R(900, 1600)}; loop: true; easing: easeInOutSine`
+      }, porteur);
+      canard(flotte, pick(), R(0.9, 1.4));
+    }
+
+    // Canards sur l'herbe
+    for (let i = 0; i < NB_TERRE; i++) {
+      const a = R(0, Math.PI * 2), d = R(13, 34);
+      const p = el('a-entity', {
+        position: `${Math.cos(a) * d} 0 ${Math.sin(a) * d}`,
+        rotation: `0 ${R(0, 360)} 0`
+      }, canards);
+      const saut = el('a-entity', {
+        animation: `property: position; to: 0 0.25 0; dir: alternate; dur: ${R(350, 700)}; loop: true; easing: easeOutQuad; delay: ${R(0, 2000)}`
+      }, p);
+      canard(saut, pick(), R(0.9, 1.5));
+    }
+
+    // Arbres ronds
+    for (let i = 0; i < 16; i++) {
+      const a = R(0, Math.PI * 2), d = R(16, 38);
+      const h = R(3, 5);
+      const arbre = el('a-entity', { position: `${Math.cos(a) * d} 0 ${Math.sin(a) * d}` }, decor);
+      el('a-cylinder', { radius: 0.25, height: h, position: `0 ${h / 2} 0`, color: '#8a5a33' }, arbre);
+      el('a-sphere', { radius: R(1.4, 2), position: `0 ${h + 0.6} 0`, scale: '1 0.8 1', color: '#2fa84f' }, arbre);
+    }
+
+    // Fleurs
+    const couleurs = ['#ff6fa5', '#ffd23f', '#ffffff', '#ff8c42'];
+    for (let i = 0; i < 70; i++) {
+      const a = R(0, Math.PI * 2), d = R(12.5, 40);
+      el('a-sphere', {
+        radius: 0.12,
+        position: `${Math.cos(a) * d} 0.12 ${Math.sin(a) * d}`,
+        color: couleurs[i % couleurs.length]
+      }, decor);
+    }
+
+    // Nénuphars
+    for (let i = 0; i < 9; i++) {
+      const a = R(0, Math.PI * 2), d = R(3, 9);
+      el('a-cylinder', {
+        radius: R(0.3, 0.55), height: 0.02,
+        position: `${Math.cos(a) * d} 0.1 ${Math.sin(a) * d}`, color: '#2e9e4a'
+      }, decor);
+    }
+
+    // Nuages qui dérivent
+    for (let i = 0; i < 7; i++) {
+      const nuage = el('a-entity', {
+        position: `${R(-60, 60)} ${R(22, 34)} ${R(-70, 10)}`,
+        animation: `property: position; by: 30 0 0; dir: alternate; dur: ${R(40000, 70000)}; loop: true; easing: easeInOutSine`
+      }, decor);
+      for (let j = 0; j < 4; j++) {
+        el('a-sphere', {
+          radius: R(2.5, 4), position: `${j * 3 - 4} ${R(-0.5, 0.8)} ${R(-1, 1)}`,
+          material: 'color: #fff; shader: flat; opacity: 0.95'
+        }, nuage);
+      }
+    }
+  });
+</script>
+</body>
+</html>
